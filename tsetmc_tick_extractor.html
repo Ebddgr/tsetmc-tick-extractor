@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TSETMC Tick Extractor</title>
+<style>
+  @font-face {
+    font-family: 'IRANSans';
+    src: url('fonts/IRANSansWeb.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'IRANSans';
+    src: url('fonts/IRANSansWeb_Medium.woff2') format('woff2');
+    font-weight: 500 600;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'IRANSans';
+    src: url('fonts/IRANSansWeb_Bold.woff2') format('woff2');
+    font-weight: 700 800;
+    font-style: normal;
+    font-display: swap;
+  }
+  :root {
+    --bg: #f4f6f9; --card: #ffffff; --ink: #1c2733; --muted: #67748a;
+    --accent: #0f62fe; --accent-dark: #0043ce; --ok: #0e8345; --warn: #b2820a; --err: #c22118;
+    --border: #d9e0e8; --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 "IRANSans", Tahoma, "Segoe UI", system-ui, sans-serif;
+  }
+  main { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  header h1 { margin: 0 0 4px; font-size: 24px; }
+  header p { margin: 0; color: var(--muted); }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px; box-shadow: 0 1px 3px rgba(16, 35, 61, .06);
+  }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  h3 { font-size: 14.5px; margin: 22px 0 6px; }
+  h3:first-of-type { margin-top: 4px; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .field input[type="text"], .field input[type="date"], .field input[type="number"] {
+    font: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--ink);
+  }
+  .field input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--muted); }
+  .check { display: flex; align-items: center; gap: 6px; padding-bottom: 9px; font-size: 14px; color: var(--ink); }
+  button {
+    font: inherit; font-weight: 600; padding: 9px 18px; border-radius: 6px; border: 1px solid transparent;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--accent-dark); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: #fff; color: var(--err); border-color: var(--err); }
+  button.ghost:hover:not(:disabled) { background: #fdecec; }
+  button.small { padding: 4px 10px; font-size: 12.5px; }
+  /* instrument list */
+  #insField { flex: 1 1 420px; max-width: 560px; }
+  .ins-add { display: flex; gap: 8px; }
+  .ins-add input { flex: 1; direction: ltr; }
+  #insList { list-style: none; margin: 6px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 6px; max-height: 180px; overflow-y: auto; }
+  #insList li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  #insList li:last-child { border-bottom: none; }
+  #insList .code { font: 13px Consolas, monospace; color: var(--ink); direction: ltr; }
+  #insList .name { flex: 1; font-size: 13.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #insList .name.pending { color: var(--muted); font-style: italic; }
+  #insList .name.failed { color: var(--warn); font-style: italic; }
+  #insList .rm { background: none; border: none; color: var(--muted); font-size: 16px; padding: 0 6px; cursor: pointer; line-height: 1; }
+  #insList .rm:hover:not(:disabled) { color: var(--err); background: none; }
+  #insList .rm:disabled { opacity: .35; cursor: not-allowed; }
+  .progress-wrap { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  progress { flex: 1; height: 10px; accent-color: var(--accent); }
+  #status { font-size: 13.5px; color: var(--muted); min-width: 180px; text-align: right; }
+  #log {
+    max-height: 260px; overflow-y: auto; font: 12.5px/1.7 Consolas, "Courier New", monospace;
+    background: #0e1720; color: #cfe3f5; border-radius: 6px; padding: 10px 14px;
+  }
+  #log .skip { color: #5b7a94; }
+  #log .ok { color: #6ee7a0; }
+  #log .err { color: #ff8f88; }
+  #log .warn { color: #ffd479; }
+  #log .head { color: #8ec2ff; font-weight: bold; }
+  #overall { display: flex; flex-wrap: wrap; gap: 8px 26px; align-items: center; margin: 0 0 4px; font-size: 14px; }
+  #overall b { font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom: 2px solid var(--border); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .daysTable tbody tr { cursor: pointer; }
+  .daysTable tbody tr:hover { background: #eef4fd; }
+  .daysTable tbody tr.selected { background: #e2ecfd; }
+  .badge-ok { color: var(--ok); font-weight: 600; }
+  .ins-summary { display: flex; flex-wrap: wrap; gap: 6px 22px; align-items: center; font-size: 13.5px; color: var(--muted); margin: 2px 0 8px; }
+  #previewTable { max-height: 320px; overflow: auto; display: block; }
+  #previewTable thead, #previewTable tbody { display: table; width: 100%; table-layout: fixed; }
+  code { background: #eef1f5; border-radius: 4px; padding: 1px 5px; font-size: 12.5px; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>TSETMC Tick Extractor</h1>
+    <p>Trade-by-trade tick data from cdn.tsetmc.com &mdash; complete trade log, fetched directly by your browser. No server, no API key.</p>
+  </header>
+
+  <section class="card">
+    <form id="form">
+      <div class="row">
+        <div class="field" id="insField">
+          <label for="insInput">Instruments (InsCodes)</label>
+          <div class="ins-add">
+            <input type="text" id="insInput" placeholder="paste one or more insCodes…" autocomplete="off" spellcheck="false">
+            <button type="button" id="addBtn">Add</button>
+          </div>
+          <ul id="insList"></ul>
+          <span class="hint">separate multiple codes with spaces, commas or newlines &mdash; instrument names are looked up automatically</span>
+        </div>
+        <div class="field">
+          <label for="fromDate">Start date</label>
+          <input type="date" id="fromDate" required>
+        </div>
+        <div class="field">
+          <label for="toDate">End date</label>
+          <input type="date" id="toDate" required>
+        </div>
+        <div class="field">
+          <label for="delay">Delay (ms)</label>
+          <input type="number" id="delay" value="1500" min="300" step="100" style="width:110px">
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button type="submit" id="startBtn">Extract ticks</button>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button type="button" id="cancelBtn" class="ghost" disabled>Cancel</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="check"><input type="checkbox" id="skipWeekend" checked> Skip Thursdays &amp; Fridays (Iran weekend)</label>
+        <span class="hint" style="padding-bottom:9px">Holidays are detected automatically (the API returns an empty log for them).</span>
+      </div>
+      <div class="progress-wrap">
+        <progress id="progress" max="100" value="0"></progress>
+        <span id="status">idle</span>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Log</h2>
+    <div id="log"></div>
+  </section>
+
+  <section class="card hidden" id="resultsCard">
+    <h2>Results</h2>
+    <div id="overall"></div>
+    <div id="grouped"></div>
+    <h2 style="margin-top:18px">Preview <span class="hint" id="previewTitle"></span></h2>
+    <table id="previewTable">
+      <thead><tr><th>trade_no</th><th>time</th><th class="num">price (rial)</th><th class="num">volume</th><th>canceled</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="hint">Click a day above to preview its first 50 ticks. Per-day CSVs use the same format as <code>tsetmc_ticks.js</code>.</p>
+  </section>
+</main>
+
+<script id="core">
+// Pure core: no DOM. Also exercised by a Node test harness.
+const TICK_BASE = 'https://cdn.tsetmc.com/api';
+const DAY_HEADER = ['trade_no', 'time_hhmmss', 'price_rial', 'volume_shares', 'canceled'];
+const COMBINED_HEADER = ['date'].concat(DAY_HEADER);
+
+const pad6 = n => String(n).padStart(6, '0');
+const pad2 = n => String(n).padStart(2, '0');
+const toYmd = s => s.replaceAll('-', '');
+const fmtYmd = y => `${y.slice(0, 4)}-${y.slice(4, 6)}-${y.slice(6, 8)}`;
+const fmtTime = h6 => `${h6.slice(0, 2)}:${h6.slice(2, 4)}:${h6.slice(4, 6)}`;
+
+function todayYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+}
+
+// Inclusive list of {date:'YYYYMMDD', weekend} from 'YYYYMMDD' bounds.
+function eachDay(fromYmd, toYmdStr, skipWeekend) {
+  const out = [];
+  const [fy, fm, fd] = [fromYmd.slice(0, 4), fromYmd.slice(4, 6), fromYmd.slice(6, 8)];
+  const [ty, tm, td] = [toYmdStr.slice(0, 4), toYmdStr.slice(4, 6), toYmdStr.slice(6, 8)];
+  const t = new Date(+fy, +fm - 1, +fd);
+  const end = new Date(+ty, +tm - 1, +td);
+  while (t <= end) {
+    const dow = t.getDay(); // 4=Thu, 5=Fri (TSE closed)
+    out.push({
+      date: `${t.getFullYear()}${pad2(t.getMonth() + 1)}${pad2(t.getDate())}`,
+      weekend: dow === 4 || dow === 5
+    });
+    t.setDate(t.getDate() + 1);
+  }
+  return skipWeekend ? out.filter(d => !d.weekend) : out;
+}
+
+const DOW_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function dowName(ymd) {
+  const t = new Date(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8));
+  return DOW_NAMES[t.getDay()];
+}
+
+function tickToRow(date, tk) {
+  return [date, tk.nTran, pad6(tk.hEven), tk.pTran, tk.qTitTran, tk.canceled ? 1 : 0];
+}
+
+function csvField(v) {
+  v = String(v);
+  return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+function toCsv(header, rows) {
+  return '\uFEFF' + header.join(',') + '\r\n' +
+    rows.map(r => r.map(csvField).join(',')).join('\r\n') + '\r\n';
+}
+
+// Complete trade log for one day, sorted oldest→newest by nTran. Empty array = no trading that day.
+async function fetchDayTicks(insCode, ymdStr, { signal, retries = 3, retryWaitMs = 5000 } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const r = await fetch(`${TICK_BASE}/Trade/GetTradeHistory/${insCode}/${ymdStr}/false`, { signal });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
+      const arr = Array.isArray(j.tradeHistory) ? j.tradeHistory : [];
+      arr.sort((a, b) => a.nTran - b.nTran);
+      return arr;
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+      lastErr = e;
+      if (attempt < retries) await new Promise(res => setTimeout(res, retryWaitMs * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
+// Best-effort instrument metadata (Persian name etc.); null if unavailable.
+async function fetchInstrument(insCode, { signal } = {}) {
+  try {
+    const r = await fetch(`${TICK_BASE}/Instrument/GetInstrumentHistory/${insCode}/${todayYmd()}/`, { signal });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    return j.instrumentHistory || null;
+  } catch (e) {
+    if (e.name === 'AbortError') throw e;
+    return null;
+  }
+}
+</script>
+
+<script>
+// ===== UI layer =====
+const $ = id => document.getElementById(id);
+const logEl = $('log'), progressEl = $('progress'), statusEl = $('status');
+const startBtn = $('startBtn'), cancelBtn = $('cancelBtn'), addBtn = $('addBtn'), insInput = $('insInput');
+const fmtInt = n => n.toLocaleString('en-US');
+
+let running = false, controller = null;
+let instruments = [];  // {code, name:{short, full}|null, resolved, resolving}
+let results = [];      // {code, short, full, dayRecords:[{date, trades, canceledCount, volume, rows}]}
+let selectedKey = null;
+let resolving = false;
+
+function log(msg, cls) {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = `[${new Date().toLocaleTimeString('en-GB')}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+// ---------- instrument list ----------
+const LS_KEY = 'tsetmc_ins_codes';
+function saveIns() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify(instruments.map(i => i.code))); } catch (e) { /* private mode etc. */ }
+}
+
+function renderInsList() {
+  const ul = $('insList');
+  ul.innerHTML = '';
+  for (const item of instruments) {
+    const li = document.createElement('li');
+    const code = document.createElement('span');
+    code.className = 'code'; code.textContent = item.code;
+    const name = document.createElement('span');
+    if (item.resolved && item.name) {
+      name.textContent = item.name.full;
+      name.title = item.name.full;
+    } else if (item.resolving) {
+      name.className = 'name pending'; name.textContent = 'looking up name…';
+    } else if (item.resolved) {
+      name.className = 'name failed'; name.textContent = 'name lookup failed';
+    }
+    name.className = name.className || 'name';
+    const rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'rm'; rm.textContent = '×';
+    rm.title = 'Remove'; rm.disabled = running;
+    rm.setAttribute('aria-label', 'Remove ' + item.code);
+    rm.addEventListener('click', () => {
+      instruments = instruments.filter(i => i !== item);
+      saveIns(); renderInsList();
+    });
+    li.append(code, name, rm);
+    ul.appendChild(li);
+  }
+  startBtn.disabled = running || instruments.length === 0;
+}
+
+function addCodes(text) {
+  const found = String(text).match(/\d{6,20}/g) || [];
+  const fresh = found.filter(c => !instruments.some(i => i.code === c));
+  for (const c of fresh) instruments.push({ code: c, name: null, resolved: false, resolving: false });
+  if (fresh.length) { saveIns(); renderInsList(); resolveNames(); }
+  return fresh.length;
+}
+
+async function resolveNames() {
+  if (resolving) return;
+  resolving = true;
+  try {
+    for (const item of instruments) {
+      if (item.resolved || item.resolving) continue;
+      item.resolving = true; renderInsList();
+      const inst = await fetchInstrument(item.code);
+      if (inst && (inst.lVal30 || inst.lVal18AFC)) {
+        item.name = {
+          short: inst.lVal18AFC || inst.lVal30,
+          full: inst.lVal18AFC && inst.lVal30 && inst.lVal18AFC !== inst.lVal30
+            ? `${inst.lVal18AFC} — ${inst.lVal30}` : (inst.lVal30 || inst.lVal18AFC)
+        };
+      }
+      item.resolved = true; item.resolving = false;
+      renderInsList();
+      await sleep(400);
+    }
+  } finally { resolving = false; }
+}
+
+// ---------- results ----------
+function groupLabel(g) { return g.full || g.short || g.code; }
+
+function renderResults(from, to) {
+  const totalTicks = results.reduce((s, g) => s + g.dayRecords.reduce((a, d) => a + d.trades, 0), 0);
+  const totalDays = results.reduce((s, g) => s + g.dayRecords.length, 0);
+  $('resultsCard').classList.remove('hidden');
+
+  const overall = $('overall');
+  overall.innerHTML = '';
+  const stat = (label, val) => {
+    const sp = document.createElement('span');
+    sp.innerHTML = label + ' <b>' + val + '</b>';
+    return sp;
+  };
+  overall.append(
+    stat('Instruments:', results.length),
+    stat('Days with data:', totalDays),
+    stat('Total ticks:', fmtInt(totalTicks))
+  );
+  if (results.length > 1) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.id = 'dlAll'; b.className = 'small';
+    b.textContent = `Download all combined CSVs (${fmtYmd(from)} → ${fmtYmd(to)})`;
+    b.addEventListener('click', async () => {
+      for (const g of results) {
+        downloadCombined(g, from, to);
+        await sleep(400);
+      }
+    });
+    overall.appendChild(b);
+  }
+
+  const host = $('grouped');
+  host.innerHTML = '';
+  for (const g of results) {
+    const sec = document.createElement('div');
+    sec.className = 'ins-section';
+    const h = document.createElement('h3');
+    h.textContent = groupLabel(g) + ' ';
+    const c = document.createElement('span');
+    c.className = 'hint'; c.textContent = `(${g.code})`;
+    h.appendChild(c);
+    sec.appendChild(h);
+
+    const ticks = g.dayRecords.reduce((a, d) => a + d.trades, 0);
+    const vol = g.dayRecords.reduce((a, d) => a + d.volume, 0);
+    const sum = document.createElement('div');
+    sum.className = 'ins-summary';
+    sum.innerHTML =
+      `<span>Days with data: <b>${g.dayRecords.length}</b></span>` +
+      `<span>Total ticks: <b>${fmtInt(ticks)}</b></span>` +
+      `<span>Total volume: <b>${fmtInt(vol)}</b></span>`;
+    if (g.dayRecords.length) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'small';
+      b.textContent = 'Download combined CSV';
+      b.addEventListener('click', () => downloadCombined(g, from, to));
+      sum.appendChild(b);
+    }
+    sec.appendChild(sum);
+
+    if (g.dayRecords.length) {
+      const tbl = document.createElement('table');
+      tbl.className = 'daysTable';
+      tbl.innerHTML = '<thead><tr><th>Date</th><th>Weekday</th><th class="num">Trades</th>' +
+        '<th class="num">Canceled</th><th class="num">Volume (shares)</th><th>Status</th><th></th></tr></thead><tbody></tbody>';
+      const tb = tbl.tBodies[0];
+      for (const rec of g.dayRecords) {
+        const tr = document.createElement('tr');
+        if (selectedKey === g.code + '_' + rec.date) tr.classList.add('selected');
+        tr.innerHTML =
+          `<td>${fmtYmd(rec.date)}</td><td>${dowName(rec.date)}</td>` +
+          `<td class="num">${fmtInt(rec.trades)}</td><td class="num">${fmtInt(rec.canceledCount)}</td>` +
+          `<td class="num">${fmtInt(rec.volume)}</td><td><span class="badge-ok">OK</span></td>` +
+          `<td><button type="button" class="small" data-day="${rec.date}">CSV</button></td>`;
+        tr.querySelector('button').addEventListener('click', e => {
+          e.stopPropagation();
+          download(`${g.code}_${rec.date}.csv`, toCsv(DAY_HEADER, rec.rows.map(r => r.slice(1))));
+        });
+        tr.addEventListener('click', () => showPreview(g, rec.date));
+        tb.appendChild(tr);
+      }
+      sec.appendChild(tbl);
+    } else {
+      const p = document.createElement('p');
+      p.className = 'hint'; p.textContent = 'No trading days with data in this range.';
+      sec.appendChild(p);
+    }
+    host.appendChild(sec);
+  }
+}
+
+function downloadCombined(g, from, to) {
+  const rows = g.dayRecords.flatMap(d => d.rows);
+  download(`${g.code}_ticks_${from}-${to}_combined.csv`, toCsv(COMBINED_HEADER, rows));
+}
+
+function showPreview(g, date) {
+  const rec = g.dayRecords.find(d => d.date === date);
+  if (!rec) return;
+  selectedKey = g.code + '_' + date;
+  const tbody = $('previewTable').tBodies[0];
+  tbody.innerHTML = '';
+  for (const [, n, h, p, q, c] of rec.rows.slice(0, 50)) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${n}</td><td>${fmtTime(h)}</td><td class="num">${fmtInt(p)}</td><td class="num">${fmtInt(q)}</td><td>${c ? 'yes' : ''}</td>`;
+    tbody.appendChild(tr);
+  }
+  $('previewTitle').textContent = `— ${groupLabel(g)}, ${fmtYmd(date)} (first 50 of ${fmtInt(rec.trades)})`;
+  renderResultsRunSafe();
+}
+
+// re-render results keeping the current from/to (used on preview selection)
+let lastRange = null;
+function renderResultsRunSafe() { if (lastRange) renderResults(lastRange.from, lastRange.to); }
+
+// ---------- run ----------
+function insCodeOf(item) { return item.code; }
+
+async function run(e) {
+  e.preventDefault();
+  if (running) return;
+  const from = toYmd($('fromDate').value), to = toYmd($('toDate').value);
+  const delay = Math.max(300, +$('delay').value || 1500);
+  const skipWeekend = $('skipWeekend').checked;
+
+  if (!instruments.length) { alert('Add at least one InsCode.'); return; }
+  if (!from || !to) { alert('Please choose a start and an end date.'); return; }
+  if (from > to) { alert('Start date must be on or before the end date.'); return; }
+
+  running = true; controller = new AbortController();
+  const { signal } = controller;
+  startBtn.disabled = true; cancelBtn.disabled = false; addBtn.disabled = true;
+  renderInsList();
+  logEl.innerHTML = ''; results = []; selectedKey = null; lastRange = { from, to };
+  $('previewTable').tBodies[0].innerHTML = ''; $('previewTitle').textContent = '';
+  $('resultsCard').classList.add('hidden');
+
+  const days = eachDay(from, to, skipWeekend);
+  const today = todayYmd();
+  log(`Extracting ${instruments.length} instrument(s) × ${days.length} day(s), ${fmtYmd(from)} → ${fmtYmd(to)} (delay ${delay} ms)…`);
+
+  progressEl.max = instruments.length * days.length; progressEl.value = 0;
+  const t0 = Date.now();
+
+  try {
+    for (let ii = 0; ii < instruments.length; ii++) {
+      const item = instruments[ii];
+      const inst = await fetchInstrument(item.code, { signal });
+      const short = inst && (inst.lVal18AFC || inst.lVal30) || item.code;
+      const full = inst && (inst.lVal30 || inst.lVal18AFC) || null;
+      if (inst && !item.resolved) { item.name = { short, full }; item.resolved = true; renderInsList(); }
+      const group = { code: item.code, short, full, dayRecords: [] };
+      results.push(group);
+      log(`— ${short} (${item.code})`, 'head');
+
+      for (let i = 0; i < days.length; i++) {
+        const d = days[i].date;
+        statusEl.textContent = `instrument ${ii + 1}/${instruments.length} · day ${i + 1}/${days.length}`;
+        let ticks;
+        try {
+          ticks = await fetchDayTicks(item.code, d, { signal });
+        } catch (err) {
+          log(`${short}: ${d} — FAILED after retries: ${err.message}`, 'err');
+          progressEl.value++;
+          if (i < days.length - 1) await sleep(delay);
+          continue;
+        }
+        if (!ticks.length) {
+          log(`${short}: ${d} (${dowName(d)}) — no trades${d === today ? ' — today\u2019s ticks publish only after end-of-day processing' : ''}`, d === today ? 'warn' : 'skip');
+        } else {
+          const rows = ticks.map(tk => tickToRow(d, tk));
+          const volume = rows.reduce((s, r) => s + r[4], 0);
+          const canceledCount = rows.reduce((s, r) => s + r[5], 0);
+          group.dayRecords.push({ date: d, trades: rows.length, canceledCount, volume, rows });
+          log(`${short}: ${d} (${dowName(d)}) — ${fmtInt(rows.length)} trades, volume ${fmtInt(volume)}${canceledCount ? `, canceled ${fmtInt(canceledCount)}` : ''}`, 'ok');
+          renderResults(from, to);
+        }
+        progressEl.value++;
+        if (i < days.length - 1) await sleep(delay);
+      }
+    }
+  } finally {
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    renderResults(from, to);
+    const lastGroup = [...results].reverse().find(g => g.dayRecords.length);
+    if (lastGroup) showPreview(lastGroup, lastGroup.dayRecords[lastGroup.dayRecords.length - 1].date);
+    log(controller.signal.aborted ? 'CANCELLED.' : `Done in ${secs} s.`, controller.signal.aborted ? 'warn' : 'ok');
+    statusEl.textContent = 'idle';
+    progressEl.value = progressEl.max;
+    running = false; startBtn.disabled = instruments.length === 0; cancelBtn.disabled = true; addBtn.disabled = false;
+  }
+}
+
+addBtn.addEventListener('click', () => { if (addCodes(insInput.value)) insInput.value = ''; });
+insInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); if (addCodes(insInput.value)) insInput.value = ''; }
+});
+cancelBtn.addEventListener('click', () => { if (running && controller) controller.abort(); });
+$('form').addEventListener('submit', e => run(e).catch(err => {
+  log('Unexpected error: ' + err.message, 'err');
+  running = false; startBtn.disabled = false; cancelBtn.disabled = true; addBtn.disabled = false;
+  statusEl.textContent = 'idle';
+}));
+
+// defaults: last 7 calendar days; saved instrument list (or the two examples)
+(function init() {
+  const now = new Date();
+  const from = new Date(now); from.setDate(from.getDate() - 6);
+  const iso = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  $('fromDate').value = iso(from);
+  $('toDate').value = iso(now);
+
+  let codes = null;
+  try { codes = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); } catch (e) { /* ignore */ }
+  if (!Array.isArray(codes)) codes = ['53251602435454519', '35905772492287302'];
+  instruments = codes.map(c => ({ code: String(c), name: null, resolved: false, resolving: false }));
+  renderInsList();
+  resolveNames();
+})();
+</script>
+</body>
+</html>
